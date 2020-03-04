@@ -4,7 +4,7 @@ Implemented in accordance with the datasheet from Bosch.
 https://www.bosch-sensortec.com/products/environmental-sensors/humidity-sensors-bme280/
 https://www.bosch-sensortec.com/media/boschsensortec/downloads/datasheets/bst-bme280-ds002.pdf
 
-The functions for calculating representive values from the ADC data returned
+The functions for calculating representative values from the ADC data returned
 by the chip are lifted from the datasheet.
 
 At present this driver does not implement functionality to take advantage of
@@ -17,6 +17,11 @@ Two modes of operation exist for this sensor, forced mode and normal mode.
 In forced mode the sensor is in standby until it is instructed to record a
 sample. In normal mode the sensor will cycle between recoding a sample and
 standby for a configurable period.
+
+If temperature is not retrieved before pressure or humidity the calculation
+will be performed regardless as a variable produced during temperature
+calculation (t_fine) is required for pressure and humidity calculation.
+tl;dr If temperature data is required ensure it is read first for performance.
 
 Example usage in forced read mode:
 
@@ -131,10 +136,7 @@ class BME280:
         self.calibration = ctypes.struct(
                             ctypes.addressof(self._calibration_buf),
                             CALIBRATION, ctypes.LITTLE_ENDIAN)
-        self.t_fine = 0
-        self.adc_p = 0
-        self.adc_t = 0
-        self.adc_h = 0
+        self.t_fine = None
         self._load_calibration()
         self.read(force=False, settings=True)
 
@@ -161,6 +163,8 @@ class BME280:
         """Calculation as set out in datasheet."""
         adc = self.data.adc_p
         c = self.calibration
+        if self.t_fine is None:
+            self.temperature
         var1 = self.t_fine - 128000
         var2 = var1 * var1 * c.P6
         var2 = var2 + ((var1*c.P5)<<17)
@@ -181,6 +185,8 @@ class BME280:
         """Calculation as set out in datasheet."""
         adc = self.data.adc_h
         c = self.calibration
+        if self.t_fine is None:
+            self.temperature
         H4 = c.H4_MSB << 4 | c.H4_LSB
         H5 = c.H5_MSB << 4 | c.H5_LSB
         v_x1_u32r = self.t_fine - 76800
@@ -239,3 +245,4 @@ class BME280:
             self.write_settings()
             utime.sleep(self.delay / 1000)
         self.i2c.readfrom_mem_into(self.addr, ADDR_DATA, self._data_buf)
+        self.t_fine = None
